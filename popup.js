@@ -15,8 +15,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const sessionsContainer = document.getElementById('sessions');
     const addSessionBtn = document.getElementById('add-session');
 
-    addSessionBtn.addEventListener('click', addSession);
+    loadSessionsFromStorage();
 
+    addSessionBtn.addEventListener('click', addSession);
     function addSession() {
         const id = `session-${sessionCounter++}`;
         sessions[id] = {
@@ -306,6 +307,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         sessions[id].savedMessages.push(msg);
         renderSavedMessages(id);
+        saveAllSessionsToStorage();
     }
 
     function renderSavedMessages(id) {
@@ -384,4 +386,85 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    function saveAllSessionsToStorage() {
+        if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+            const cleanSessions = {};
+
+            for (const id in sessions) {
+                const s = sessions[id];
+                cleanSessions[id] = {
+                    messages: s.messages,
+                    activeTab: s.activeTab,
+                    savedMessages: s.savedMessages
+                };
+            }
+
+            chrome.storage.local.set({ websocketSessions: cleanSessions }, () => {
+                console.log('sessions saved to storage');
+            });
+        }
+    }
+
+    function loadSessionsFromStorage() {
+        if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+            chrome.storage.local.get(['websocketSessions'], (result) => {
+                const stored = result.websocketSessions || {};
+                Object.entries(stored).forEach(([id, sessionData]) => {
+                    if (!sessionData || typeof sessionData !== 'object') {
+                        console.warn(`Invalid session data for ${id}`, sessionData);
+                        return;
+                    }
+                    restoreSessionUI(id, sessionData);
+                });
+            });
+        }
+    }
+
+    function restoreSessionUI(id, sessionData) {
+        const session = {
+            socket: null,
+            messages: sessionData.messages || [""],
+            activeTab: sessionData.activeTab || 0,
+            savedMessages: sessionData.savedMessages || []
+        };
+        sessions[id] = session;
+
+        const button = document.createElement('button');
+        button.textContent = id;
+        button.addEventListener('click', () => selectSession(id));
+        tabButtons.appendChild(button);
+
+        const div = document.createElement('div');
+        div.className = 'session';
+        div.id = id;
+        div.style.display = 'none';
+        div.innerHTML = getSessionInnerHTML(id);
+        sessionsContainer.appendChild(div);
+
+        document.getElementById(`${id}-connect`).addEventListener('click', () => connect(id));
+        document.getElementById(`${id}-send`).addEventListener('click', () => send(id));
+        document.getElementById(`${id}-save-message`).addEventListener('click', () => saveCurrentMessage(id));
+
+        setupJSONHighlight(id);
+
+        const tabList = document.getElementById(`${id}-tabs`);
+        for (let i = 1; i < session.messages.length; i++) {
+            const newTab = document.createElement('button');
+            newTab.className = 'message-tab';
+            newTab.dataset.tab = i;
+            newTab.textContent = `#${i + 1}`;
+            newTab.onclick = () => switchMessageTab(id, i);
+            tabList.insertBefore(newTab, document.getElementById(`${id}-add-tab`));
+        }
+
+        setupTabEvents(id);
+
+        switchMessageTab(id, session.activeTab);
+
+        renderSavedMessages(id);
+
+        selectSession(id);
+    }
+
 });
