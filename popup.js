@@ -10,18 +10,61 @@ const MESSAGE_TYPE = {
 document.addEventListener('DOMContentLoaded', async () => {
     let sessionCounter = 0;
     const sessions = {};
-
-    const tabButtons = document.getElementById('tab-buttons');
+    const sessionTabs = document.getElementById('session-tabs');
     const sessionsContainer = document.getElementById('sessions');
     const addSessionBtn = document.getElementById('add-session');
 
-    // 복원: chrome.storage.local에서 세션 데이터 불러오기
+    // 새로고침 시 현재 메시지 저장
+    window.addEventListener('beforeunload', () => {
+        Object.keys(sessions).forEach(id => {
+            const textarea = document.getElementById(`${id}-message`);
+            if (textarea) {
+                const session = sessions[id];
+                session.messages[session.activeTab] = textarea.value;
+            }
+        });
+        saveAllSessions();
+    });
+
     await restoreSessions();
 
-    addSessionBtn.addEventListener('click', addSession);
+    addSessionBtn.addEventListener('click', () => {
+        const newId = addSession();
+        selectSession(newId);
+    });
+
+    function renderSessionTabs(activeId = null) {
+        sessionTabs.innerHTML = '';
+        Object.keys(sessions).forEach(id => {
+            const tab = document.createElement('div');
+            tab.className = 'session-tab' + (id === activeId ? ' active' : '');
+            tab.dataset.id = id;
+            tab.textContent = id;
+
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'close-btn';
+            closeBtn.innerHTML = '&times;';
+            closeBtn.title = 'Close this session';
+
+            closeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                removeSession(id);
+            });
+
+            tab.appendChild(closeBtn);
+
+            tab.addEventListener('click', () => {
+                if (!tab.classList.contains('active')) {
+                    selectSession(id);
+                }
+            });
+
+            sessionTabs.appendChild(tab);
+        });
+    }
 
     function addSession(sessionData) {
-        const id = sessionData?.id || `session-${sessionCounter++}`;
+        const id = sessionData?.id ?? `session-${sessionCounter++}`;
         sessions[id] = {
             socket: null,
             url: sessionData?.url || "",
@@ -30,20 +73,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             savedMessages: sessionData?.savedMessages || []
         };
 
-        // session tab button
-        const button = document.createElement('button');
-        button.textContent = id;
-        button.addEventListener('click', () => {
-            // 항상 최신 active 상태를 기준으로 동작
-            if (button.classList.contains('active')) {
-                removeSession(id, button);
-            } else {
-                selectSession(id);
-            }
-        });
-        tabButtons.appendChild(button);
-
-        // session UI
         const div = document.createElement('div');
         div.className = 'session';
         div.id = id;
@@ -54,66 +83,57 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById(`${id}-connect`).addEventListener('click', () => connect(id));
         document.getElementById(`${id}-send`).addEventListener('click', () => send(id));
         document.getElementById(`${id}-save-message`).addEventListener('click', () => saveCurrentMessage(id));
-        document.getElementById(`${id}-url`).value = sessions[id].url;
-
-        document.getElementById(`${id}-url`).addEventListener('input', (e) => {
-            sessions[id].url = e.target.value;
-            saveAllSessions();
-        });
-
         document.getElementById(`${id}-clear-log`).addEventListener('click', () => {
             const logArea = document.getElementById(`${id}-log`);
             if (logArea) logArea.innerHTML = '';
         });
+        document.getElementById(`${id}-url`).value = sessions[id].url;
+        document.getElementById(`${id}-url`).addEventListener('input', (e) => {
+            sessions[id].url = e.target.value;
+        });
 
-        setupTabEvents(id);
+        setupMessageTabEvents(id);
         setupJSONHighlight(id);
-        selectSession(id);
 
-        // 메시지 탭 및 textarea 복원
-        restoreTabsAndTextarea(id);
+        renderSessionTabs(id);
+        restoreMessageTabsAndTextarea(id);
 
+        return id;
+    }
+
+    function removeSession(id) {
+        const sessionDiv = document.getElementById(id);
+        if (sessionDiv) sessionDiv.remove();
+        delete sessions[id];
+
+        const ids = Object.keys(sessions);
+        renderSessionTabs(ids[0]);
+        if (ids.length > 0) {
+            selectSession(ids[0]);
+        }
         saveAllSessions();
     }
 
-    function restoreTabsAndTextarea(id) {
-        const session = sessions[id];
-        const tabList = document.getElementById(`${id}-tabs`);
-        // 기존 탭 삭제 (#1만 남기고)
-        Array.from(tabList.querySelectorAll('.message-tab')).slice(1).forEach(btn => btn.remove());
-        // 탭 추가
-        for (let i = 1; i < session.messages.length; i++) {
-            const newTab = document.createElement('button');
-            newTab.className = 'message-tab';
-            newTab.dataset.tab = i;
-            newTab.textContent = `#${i + 1}`;
-            newTab.onclick = () => {
-                if (newTab.classList.contains('active')) {
-                    removeMessageTab(id, i);
-                } else {
-                    switchMessageTab(id, i);
-                }
-            };
-            tabList.insertBefore(newTab, document.getElementById(`${id}-add-tab`));
-        }
-        switchMessageTab(id, session.activeTab);
-    }
+    function selectSession(id) {
+        renderSessionTabs(id);
+        document.querySelectorAll('.session').forEach(el => (el.style.display = 'none'));
+        const selected = document.getElementById(id);
+        if (selected) selected.style.display = 'block';
 
-    function removeSession(id, button) {
-        // Remove session area from DOM
-        const sessionDiv = document.getElementById(id);
-        if (sessionDiv) sessionDiv.remove();
-        // Remove session object
-        delete sessions[id];
-        // Remove tab button
-        button.remove();
+        renderSavedMessages(id);
 
-        // If there are remaining sessions, select the first one
-        const remainingButtons = tabButtons.querySelectorAll('button');
-        if (remainingButtons.length > 0) {
-            const nextId = remainingButtons[0].textContent;
-            selectSession(nextId);
+        document.getElementById(`${id}-url`).value = sessions[id].url;
+        renderMessageTabs(id);
+
+        // textarea 값 먼저 할당
+        const textarea = document.getElementById(`${id}-message`);
+        if (textarea) {
+            textarea.value = sessions[id].messages[sessions[id].activeTab] || "";
         }
+
+        // 그 다음 switchMessageTab 호출 (textarea 값 덮어쓰지 않도록 주의)
+        switchMessageTab(id, sessions[id].activeTab);
+
         saveAllSessions();
     }
 
@@ -129,9 +149,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         <input id="${id}-url" type="text" placeholder="ws://localhost:8080" />
         <button id="${id}-connect">Connect</button>
       </div>
-      <div class="message-tabs" id="${id}-tabs">
-        <button class="message-tab active" data-tab="0">#1</button>
-        <button class="add-tab" id="${id}-add-tab">＋</button>
+      <div style="display: flex; align-items: center;">
+        <div class="message-tabs" id="${id}-tabs"></div>
+        <button class="add-tab" id="${id}-add-tab" title="Add message tab" style="margin-left: 6px;">+</button>
       </div>
       <div class="editor-container">
         <textarea id="${id}-message" class="message-input" placeholder="Enter JSON message"></textarea>
@@ -139,7 +159,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div class="button-group">
           <button id="${id}-send">Send</button>
           <button id="${id}-save-message">Save</button>
-          <button id="${id}-clear-log" class="log-clear-btn">Clear-Log</button>
+          <button id="${id}-clear-log" class="log-clear-btn">Clear</button>
         </div>
       </div>
       <div id="${id}-log" class="log-area"></div>
@@ -148,79 +168,81 @@ document.addEventListener('DOMContentLoaded', async () => {
 `;
     }
 
-    function setupTabEvents(id) {
+    function renderMessageTabs(id) {
         const session = sessions[id];
         const tabList = document.getElementById(`${id}-tabs`);
-        tabList.querySelectorAll('.message-tab').forEach((btn, idx) => {
-            btn.onclick = () => {
-                if (btn.classList.contains('active')) {
-                    removeMessageTab(id, idx);
-                } else {
+        tabList.innerHTML = '';
+        session.messages.forEach((msg, idx) => {
+            const tab = document.createElement('div');
+            tab.className = 'message-tab' + (idx === session.activeTab ? ' active' : '');
+            tab.textContent = `#${idx + 1}`;
+
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'close-btn';
+            closeBtn.innerHTML = '&times;';
+            closeBtn.title = 'Close this message tab';
+
+            closeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                removeMessageTab(id, idx);
+            });
+
+            tab.appendChild(closeBtn);
+
+            tab.addEventListener('click', () => {
+                if (!tab.classList.contains('active')) {
                     switchMessageTab(id, idx);
                 }
-            };
+            });
+
+            tabList.appendChild(tab);
         });
+    }
+
+    function setupMessageTabEvents(id) {
         document.getElementById(`${id}-add-tab`).addEventListener('click', () => {
-            session.messages.push("");
-            const tabList = document.getElementById(`${id}-tabs`);
-            const newIndex = tabList.querySelectorAll('.message-tab').length;
-            const newTab = document.createElement('button');
-            newTab.className = 'message-tab';
-            newTab.dataset.tab = newIndex;
-            newTab.textContent = `#${newIndex + 1}`;
-            newTab.onclick = () => {
-                if (newTab.classList.contains('active')) {
-                    removeMessageTab(id, newIndex);
-                } else {
-                    switchMessageTab(id, newIndex);
-                }
-            };
-            tabList.insertBefore(newTab, document.getElementById(`${id}-add-tab`));
-            switchMessageTab(id, newIndex);
+            sessions[id].messages.push("");
+            renderMessageTabs(id);
+            switchMessageTab(id, sessions[id].messages.length - 1);
             saveAllSessions();
         });
     }
 
     function removeMessageTab(id, tabIndex) {
         const session = sessions[id];
-        if (session.messages.length === 1) return; // Always keep at least one
+        if (session.messages.length === 1) return;
 
-        // Remove message and tab button
         session.messages.splice(tabIndex, 1);
-        const tabList = document.getElementById(`${id}-tabs`);
-        const tabBtn = tabList.querySelector(`.message-tab[data-tab="${tabIndex}"]`);
-        if (tabBtn) tabBtn.remove();
 
-        // Re-index remaining tabs and re-register events
-        Array.from(tabList.querySelectorAll('.message-tab')).forEach((btn, idx) => {
-            btn.dataset.tab = idx;
-            btn.textContent = `#${idx + 1}`;
-            btn.onclick = () => {
-                if (btn.classList.contains('active')) {
-                    removeMessageTab(id, idx);
-                } else {
-                    switchMessageTab(id, idx);
-                }
-            };
-        });
-
-        // Adjust activeTab
-        session.activeTab = Math.max(0, tabIndex - 1);
+        if (session.activeTab >= session.messages.length) {
+            session.activeTab = session.messages.length - 1;
+        }
+        renderMessageTabs(id);
         switchMessageTab(id, session.activeTab);
-        saveAllSessions();
     }
 
     function switchMessageTab(id, tabIndex) {
         const session = sessions[id];
         const textarea = document.getElementById(`${id}-message`);
+        if (!textarea) return;
+
+        // 현재 탭 메시지 저장
         session.messages[session.activeTab] = textarea.value;
+
         session.activeTab = tabIndex;
-        textarea.value = session.messages[tabIndex];
-        document.querySelectorAll(`#${id}-tabs .message-tab`).forEach(btn => btn.classList.remove('active'));
-        const newActive = document.querySelector(`#${id}-tabs .message-tab[data-tab="${tabIndex}"]`);
-        if (newActive) newActive.classList.add('active');
+
+        // 새 탭 메시지 textarea에 할당
+        textarea.value = session.messages[tabIndex] || "";
+
+        renderMessageTabs(id);
+
+        // input 이벤트 강제 발생 (JSON 하이라이트 갱신용)
         textarea.dispatchEvent(new Event('input'));
-        saveAllSessions();
+    }
+
+    function restoreMessageTabsAndTextarea(id) {
+        renderMessageTabs(id);
+        switchMessageTab(id, sessions[id].activeTab);
     }
 
     function connect(id) {
@@ -287,8 +309,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             container.appendChild(createCopyButton(() => message));
         }
 
-        logArea.appendChild(container);
-        logArea.scrollTop = logArea.scrollHeight;
+        logArea.insertBefore(container, logArea.firstChild);
 
         if (type === MESSAGE_TYPE.SENT || type === MESSAGE_TYPE.RECEIVED) {
             saveMessage(id, {
@@ -319,47 +340,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         return copyBtn;
     }
 
-    function selectSession(id) {
-        document.querySelectorAll('.session').forEach(el => (el.style.display = 'none'));
-        const selected = document.getElementById(id);
-        if (selected) selected.style.display = 'block';
-
-        document.querySelectorAll('#tab-buttons button').forEach(btn => btn.classList.remove('active'));
-        const activeBtn = Array.from(document.querySelectorAll('#tab-buttons button')).find(btn => btn.textContent === id);
-        if (activeBtn) activeBtn.classList.add('active');
-        renderSavedMessages(id);
-
-        // Restore URL and textarea when switching sessions
-        document.getElementById(`${id}-url`).value = sessions[id].url;
-        const textarea = document.getElementById(`${id}-message`);
-        textarea.value = sessions[id].messages[sessions[id].activeTab];
-    }
-
-    function send(id) {
-        const input = document.getElementById(`${id}-message`);
-        const socket = sessions[id].socket;
-        const msg = input.value;
-
-        if (!socket || socket.readyState !== WebSocket.OPEN) {
-            logMessage(id, 'WebSocket is not open.', MESSAGE_TYPE.RECEIVED);
-            return;
-        }
-
-        socket.send(msg);
-        const formatted = isValidJSON(msg) ? formatJSON(msg) : msg;
-        logMessage(id, formatted, MESSAGE_TYPE.SENT);
-    }
-
-    function saveCurrentMessage(id) {
-        const input = document.getElementById(`${id}-message`);
-        const msg = input.value.trim();
-        if (!msg) return;
-
-        sessions[id].savedMessages.push(msg);
-        renderSavedMessages(id);
-        saveAllSessions();
-    }
-
     function renderSavedMessages(id) {
         const container = document.getElementById(`${id}-saved-list`);
         const messages = sessions[id].savedMessages;
@@ -373,9 +353,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const snippet = document.createElement('span');
             snippet.textContent = msg.length > 60 ? msg.slice(0, 60) + '...' : msg;
-            snippet.title = msg; // Show full message on hover
+            snippet.title = msg;
 
-            // Copy button
             const copyBtn = document.createElement('button');
             copyBtn.className = 'saved-message-copy-btn';
             copyBtn.textContent = 'Copy';
@@ -385,7 +364,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 input.dispatchEvent(new Event('input'));
             });
 
-            // Delete button
             const delBtn = document.createElement('button');
             delBtn.className = 'saved-message-del-btn';
             delBtn.textContent = 'Del';
@@ -393,7 +371,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             delBtn.addEventListener('click', () => {
                 sessions[id].savedMessages.splice(index, 1);
                 renderSavedMessages(id);
-                saveAllSessions();
             });
 
             row.appendChild(snippet);
@@ -401,6 +378,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             row.appendChild(delBtn);
             container.appendChild(row);
         });
+    }
+
+    function saveCurrentMessage(id) {
+        const input = document.getElementById(`${id}-message`);
+        const msg = input.value.trim();
+        if (!msg) return;
+
+        sessions[id].savedMessages.push(msg);
+        renderSavedMessages(id);
     }
 
     function syntaxHighlight(json) {
@@ -426,17 +412,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         const input = document.getElementById(`${id}-message`);
         const viewer = document.getElementById(`${id}-json-viewer`);
 
-        // Always copy the latest input.value using callback
         const copyBtn = createCopyButton(() => input.value.trim());
 
         viewer.style.position = 'relative';
         viewer.appendChild(copyBtn);
 
         input.addEventListener('input', () => {
-            const val = input.value.trim();
-            sessions[id].messages[sessions[id].activeTab] = val;
-            saveAllSessions();
-            if (!val) {
+            const val = input.value;
+            sessions[id].messages[sessions[id].activeTab] = val; // 항상 저장!
+            if (!val.trim()) {
                 viewer.innerHTML = '';
                 viewer.appendChild(copyBtn);
                 return;
@@ -453,7 +437,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // Save all sessions to chrome.storage.local
+    function send(id) {
+        const input = document.getElementById(`${id}-message`);
+        const socket = sessions[id].socket;
+        const msg = input.value;
+
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            logMessage(id, 'WebSocket is not open.', MESSAGE_TYPE.RECEIVED);
+            return;
+        }
+
+        socket.send(msg);
+        const formatted = isValidJSON(msg) ? formatJSON(msg) : msg;
+        logMessage(id, formatted, MESSAGE_TYPE.SENT);
+    }
+
     function saveAllSessions() {
         const data = Object.entries(sessions).map(([id, s]) => ({
             id,
@@ -462,32 +460,55 @@ document.addEventListener('DOMContentLoaded', async () => {
             activeTab: s.activeTab,
             savedMessages: s.savedMessages
         }));
+
+        const activeSessionTab = document.querySelector('.session-tab.active');
+        const selectedSessionId = activeSessionTab ? activeSessionTab.dataset.id : '';
+
         if (window.chrome?.storage?.local) {
-            chrome.storage.local.set({ websocketKongSessions: data });
+            chrome.storage.local.set({
+                websocketKongSessions: data,
+                websocketKongSelectedSession: selectedSessionId
+            });
         } else {
             localStorage.setItem('websocketKongSessions', JSON.stringify(data));
+            localStorage.setItem('websocketKongSelectedSession', selectedSessionId);
         }
     }
 
-    // Restore all sessions from chrome.storage.local
     async function restoreSessions() {
         return new Promise((resolve) => {
             if (window.chrome?.storage?.local) {
-                chrome.storage.local.get(['websocketKongSessions'], (result) => {
+                chrome.storage.local.get(['websocketKongSessions', 'websocketKongSelectedSession'], (result) => {
                     const arr = result.websocketKongSessions || [];
+                    let idList = [];
                     arr.forEach(sessionData => {
-                        addSession(sessionData);
+                        const id = addSession(sessionData);
+                        idList.push(sessionData.id ?? id);
                     });
                     sessionCounter = arr.length;
+                    const selectedId = result.websocketKongSelectedSession;
+                    if (selectedId && sessions[selectedId]) {
+                        selectSession(selectedId);
+                    } else if (idList.length > 0 && sessions[idList[0]]) {
+                        selectSession(idList[0]);
+                    }
                     resolve();
                 });
             } else {
-                // fallback for non-extension environments
                 const arr = JSON.parse(localStorage.getItem('websocketKongSessions') || '[]');
+                let idList = [];
                 arr.forEach(sessionData => {
-                    addSession(sessionData);
+                    const id = addSession(sessionData);
+                    idList.push(sessionData.id ?? id);
                 });
                 sessionCounter = arr.length;
+                const selectedId = localStorage.getItem('websocketKongSelectedSession');
+
+                if (selectedId && sessions[selectedId]) {
+                    selectSession(selectedId);
+                } else if (idList.length > 0 && sessions[idList[0]]) {
+                    selectSession(idList[0]);
+                }
                 resolve();
             }
         });

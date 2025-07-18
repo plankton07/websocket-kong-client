@@ -19,6 +19,14 @@
     --json-null: #f92672;
 }
 
+/* Main container width and centering */
+#main-container {
+    width: 95vw;
+    max-width: 1400px;
+    margin: 0 auto;
+    box-sizing: border-box;
+}
+
 /* Global layout and base font settings */
 body {
     font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -43,14 +51,126 @@ h1 {
     color: #2c3e50;
 }
 
-/* Tab area */
-#tabs {
+/* Session Tabs (for session switching) */
+.session-tabs,
+.message-tabs {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #e0e0e0;
+    background: transparent;
+    flex-wrap: wrap; /* 핵심: 줄바꿈 허용 */
+}
+
+/* Common tab style for session and message tabs */
+.session-tab,
+.message-tab,
+#add-session,
+.add-tab {
     display: flex;
     align-items: center;
-    gap: 16px;
-    margin-bottom: 30px;
-    flex-wrap: wrap;
     justify-content: center;
+    background: #ecf0f1;
+    color: #2c3e50;
+    border: 1px solid #ccc;
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    font-size: 1.15rem;
+    cursor: pointer;
+    position: relative;
+    transition: background 0.2s, color 0.2s;
+    min-width: 48px;
+    max-width: 220px;
+    user-select: none;
+    font-weight: 600;
+    box-shadow: none;
+    height: 44px;
+    padding: 0 18px;
+    line-height: 1;
+    margin: 0 2px 8px 0; /* 아래쪽 여백 추가로 줄간격 자연스럽게 */
+}
+
+.session-tab.active,
+.message-tab.active {
+    background: #fff;
+    color: #3498db;
+    font-weight: bold;
+    border-bottom: 2px solid #fff;
+    z-index: 2;
+}
+
+.session-tab .close-btn,
+.message-tab .close-btn {
+    margin-left: 10px;
+    color: #aaa;
+    background: none;
+    border: none;
+    font-size: 1.1em;
+    cursor: pointer;
+    padding: 0 2px;
+    transition: color 0.2s;
+    line-height: 1;
+}
+.session-tab .close-btn:hover,
+.message-tab .close-btn:hover {
+    color: #e74c3c;
+}
+
+/* + New Session button styled as a tab */
+#add-session {
+    background: #f5f5f5;
+    color: #27ae60;
+    border: 1px dashed #b2dfdb;
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    font-size: 1.15rem;
+    font-weight: bold;
+    margin-left: 6px;
+    margin-right: 0;
+    min-width: 140px;
+    max-width: 260px;
+    padding: 0 28px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    box-shadow: none;
+    margin-bottom: 8px;
+}
+#add-session:hover {
+    background: #e8f5e9;
+    color: #219150;
+    border-color: #27ae60;
+}
+
+/* Add Message Tab (+) styled as a tab */
+.add-tab {
+    background: #f5f5f5;
+    color: #3498db;
+    border: 1px dashed #b2dfdb;
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    font-size: 1.3rem;
+    font-weight: bold;
+    min-width: 48px;
+    max-width: 48px;
+    padding: 0;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    box-shadow: none;
+    margin-left: 6px;
+    margin-right: 0;
+    margin-bottom: 8px;
+}
+.add-tab:hover {
+    background: #e8f5e9;
+    color: #219150;
+    border-color: #3498db;
 }
 
 /* Session container */
@@ -120,8 +240,8 @@ h1 {
     transition: background 0.2s, color 0.2s;
 }
 #sessions .button-group .log-clear-btn:hover {
-    background: #e74c3c;
-    color: #fff;
+    background: #e8f5e9;
+    color: #e74c3c;
     border-color: #e74c3c;
 }
 /* JSON highlight */
@@ -197,11 +317,7 @@ h1 {
 
 /* Common button styles */
 button,
-.session button,
-#add-session,
-#tab-buttons button,
-.message-tab,
-.add-tab {
+.session button {
     font-family: inherit;
     padding: 12px 24px;
     font-size: 1rem;
@@ -226,38 +342,6 @@ button:hover {
     background-color: var(--main-color-dark);
 }
 
-/* New Session button */
-#add-session {
-    background-color: var(--accent-green);
-    color: white;
-    box-shadow: var(--shadow);
-}
-#add-session:hover {
-    background-color: var(--accent-green-dark);
-}
-
-/* Session tab buttons */
-#tab-buttons {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-#tab-buttons button {
-    background-color: var(--tab-bg);
-    color: #2c3e50;
-    border: 1px solid #ccc;
-}
-#tab-buttons button:hover {
-    background-color: #dcdde1;
-}
-#tab-buttons button.active {
-    background-color: var(--tab-active-bg);
-    color: var(--tab-active-color);
-    font-weight: bold;
-    box-shadow: inset 0 2px 6px rgba(0,0,0,0.2);
-    border: 1px solid var(--main-color-dark);
-}
-
 /* URL + Connect row */
 .connect-row {
     display: flex;
@@ -269,48 +353,6 @@ button:hover {
 }
 .connect-row button {
     white-space: nowrap;
-}
-
-/* Message tabs */
-.message-tabs {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 12px;
-    flex-wrap: wrap;
-}
-
-.message-tab {
-    padding: 8px 16px;
-    background: #e0e0e0;
-    border: 1px solid #bbb;
-    border-radius: 6px;
-    cursor: pointer;
-    box-shadow: 0 2px 3px rgba(0, 0, 0, 0.1);
-    transition: all 0.2s;
-}
-
-.message-tab:hover {
-    background-color: #d5d5d5;
-}
-
-.message-tab.active {
-    background-color: #ffffff;
-    color: #2c3e50;
-    font-weight: bold;
-    border: 1px solid var(--main-color);
-    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.2);
-    position: relative;
-    top: 1px;
-    z-index: 1;
-}
-
-.add-tab {
-    background: none;
-    border: none;
-    font-size: 1.4rem;
-    color: #555;
-    cursor: pointer;
-    padding: 0 10px;
 }
 
 /* Log entry */
@@ -365,7 +407,7 @@ button:hover {
 }
 
 .saved-panel {
-    width: 200px;
+    width: 400px;
     min-width: 360px;
     background-color: #f5f5f5;
     padding: 10px;
@@ -396,6 +438,7 @@ button:hover {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    cursor: pointer;
 }
 
 .saved-message-copy-btn {
@@ -424,12 +467,4 @@ button:hover {
 }
 .saved-message-del-btn:hover {
     background: #c0392b;
-}
-
-.saved-message-item span {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    cursor: pointer; /* Optional: show pointer on hover */
 }
