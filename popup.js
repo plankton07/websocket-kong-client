@@ -7,7 +7,7 @@ const MESSAGE_TYPE = {
     ERROR: 'error'
 };
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     let sessionCounter = 0;
     const sessions = {};
 
@@ -15,22 +15,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const sessionsContainer = document.getElementById('sessions');
     const addSessionBtn = document.getElementById('add-session');
 
-    loadSessionsFromStorage();
+    // 복원: chrome.storage.local에서 세션 데이터 불러오기
+    await restoreSessions();
 
     addSessionBtn.addEventListener('click', addSession);
-    function addSession() {
-        const id = `session-${sessionCounter++}`;
+
+    function addSession(sessionData) {
+        const id = sessionData?.id || `session-${sessionCounter++}`;
         sessions[id] = {
             socket: null,
-            messages: [""],
-            activeTab: 0,
-            savedMessages: []
+            url: sessionData?.url || "",
+            messages: sessionData?.messages || [""],
+            activeTab: sessionData?.activeTab || 0,
+            savedMessages: sessionData?.savedMessages || []
         };
 
-        // Create session tab button
+        // session tab button
         const button = document.createElement('button');
         button.textContent = id;
         button.addEventListener('click', () => {
+            // 항상 최신 active 상태를 기준으로 동작
             if (button.classList.contains('active')) {
                 removeSession(id, button);
             } else {
@@ -39,7 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         tabButtons.appendChild(button);
 
-        // Session UI
+        // session UI
         const div = document.createElement('div');
         div.className = 'session';
         div.id = id;
@@ -47,14 +51,52 @@ document.addEventListener('DOMContentLoaded', () => {
         div.innerHTML = getSessionInnerHTML(id);
         sessionsContainer.appendChild(div);
 
-        // Register events
         document.getElementById(`${id}-connect`).addEventListener('click', () => connect(id));
         document.getElementById(`${id}-send`).addEventListener('click', () => send(id));
         document.getElementById(`${id}-save-message`).addEventListener('click', () => saveCurrentMessage(id));
+        document.getElementById(`${id}-url`).value = sessions[id].url;
+
+        document.getElementById(`${id}-url`).addEventListener('input', (e) => {
+            sessions[id].url = e.target.value;
+            saveAllSessions();
+        });
+
+        document.getElementById(`${id}-clear-log`).addEventListener('click', () => {
+            const logArea = document.getElementById(`${id}-log`);
+            if (logArea) logArea.innerHTML = '';
+        });
 
         setupTabEvents(id);
         setupJSONHighlight(id);
         selectSession(id);
+
+        // 메시지 탭 및 textarea 복원
+        restoreTabsAndTextarea(id);
+
+        saveAllSessions();
+    }
+
+    function restoreTabsAndTextarea(id) {
+        const session = sessions[id];
+        const tabList = document.getElementById(`${id}-tabs`);
+        // 기존 탭 삭제 (#1만 남기고)
+        Array.from(tabList.querySelectorAll('.message-tab')).slice(1).forEach(btn => btn.remove());
+        // 탭 추가
+        for (let i = 1; i < session.messages.length; i++) {
+            const newTab = document.createElement('button');
+            newTab.className = 'message-tab';
+            newTab.dataset.tab = i;
+            newTab.textContent = `#${i + 1}`;
+            newTab.onclick = () => {
+                if (newTab.classList.contains('active')) {
+                    removeMessageTab(id, i);
+                } else {
+                    switchMessageTab(id, i);
+                }
+            };
+            tabList.insertBefore(newTab, document.getElementById(`${id}-add-tab`));
+        }
+        switchMessageTab(id, session.activeTab);
     }
 
     function removeSession(id, button) {
@@ -72,6 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const nextId = remainingButtons[0].textContent;
             selectSession(nextId);
         }
+        saveAllSessions();
     }
 
     function getSessionInnerHTML(id) {
@@ -96,6 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="button-group">
           <button id="${id}-send">Send</button>
           <button id="${id}-save-message">Save</button>
+          <button id="${id}-clear-log" class="log-clear-btn">Clear-Log</button>
         </div>
       </div>
       <div id="${id}-log" class="log-area"></div>
@@ -108,22 +152,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const session = sessions[id];
         const tabList = document.getElementById(`${id}-tabs`);
         tabList.querySelectorAll('.message-tab').forEach((btn, idx) => {
-            btn.addEventListener('click', () => {
+            btn.onclick = () => {
                 if (btn.classList.contains('active')) {
                     removeMessageTab(id, idx);
                 } else {
                     switchMessageTab(id, idx);
                 }
-            });
+            };
         });
         document.getElementById(`${id}-add-tab`).addEventListener('click', () => {
-            const session = sessions[id];
             session.messages.push("");
             const tabList = document.getElementById(`${id}-tabs`);
+            const newIndex = tabList.querySelectorAll('.message-tab').length;
             const newTab = document.createElement('button');
             newTab.className = 'message-tab';
-            // The index of the new tab is the current number of tabs - 1
-            const newIndex = tabList.querySelectorAll('.message-tab').length;
             newTab.dataset.tab = newIndex;
             newTab.textContent = `#${newIndex + 1}`;
             newTab.onclick = () => {
@@ -135,6 +177,7 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             tabList.insertBefore(newTab, document.getElementById(`${id}-add-tab`));
             switchMessageTab(id, newIndex);
+            saveAllSessions();
         });
     }
 
@@ -164,6 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Adjust activeTab
         session.activeTab = Math.max(0, tabIndex - 1);
         switchMessageTab(id, session.activeTab);
+        saveAllSessions();
     }
 
     function switchMessageTab(id, tabIndex) {
@@ -176,6 +220,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const newActive = document.querySelector(`#${id}-tabs .message-tab[data-tab="${tabIndex}"]`);
         if (newActive) newActive.classList.add('active');
         textarea.dispatchEvent(new Event('input'));
+        saveAllSessions();
     }
 
     function connect(id) {
@@ -283,6 +328,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const activeBtn = Array.from(document.querySelectorAll('#tab-buttons button')).find(btn => btn.textContent === id);
         if (activeBtn) activeBtn.classList.add('active');
         renderSavedMessages(id);
+
+        // Restore URL and textarea when switching sessions
+        document.getElementById(`${id}-url`).value = sessions[id].url;
+        const textarea = document.getElementById(`${id}-message`);
+        textarea.value = sessions[id].messages[sessions[id].activeTab];
     }
 
     function send(id) {
@@ -307,7 +357,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         sessions[id].savedMessages.push(msg);
         renderSavedMessages(id);
-        saveAllSessionsToStorage();
+        saveAllSessions();
     }
 
     function renderSavedMessages(id) {
@@ -323,18 +373,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const snippet = document.createElement('span');
             snippet.textContent = msg.length > 60 ? msg.slice(0, 60) + '...' : msg;
+            snippet.title = msg; // Show full message on hover
 
-            const btn = document.createElement('button');
-            btn.className = 'saved-message-copy-btn';
-            btn.textContent = 'Copy';
-            btn.addEventListener('click', () => {
+            // Copy button
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'saved-message-copy-btn';
+            copyBtn.textContent = 'Copy';
+            copyBtn.addEventListener('click', () => {
                 const input = document.getElementById(`${id}-message`);
                 input.value = msg;
                 input.dispatchEvent(new Event('input'));
             });
 
+            // Delete button
+            const delBtn = document.createElement('button');
+            delBtn.className = 'saved-message-del-btn';
+            delBtn.textContent = 'Del';
+            delBtn.title = 'Delete this message';
+            delBtn.addEventListener('click', () => {
+                sessions[id].savedMessages.splice(index, 1);
+                renderSavedMessages(id);
+                saveAllSessions();
+            });
+
             row.appendChild(snippet);
-            row.appendChild(btn);
+            row.appendChild(copyBtn);
+            row.appendChild(delBtn);
             container.appendChild(row);
         });
     }
@@ -370,6 +434,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         input.addEventListener('input', () => {
             const val = input.value.trim();
+            sessions[id].messages[sessions[id].activeTab] = val;
+            saveAllSessions();
             if (!val) {
                 viewer.innerHTML = '';
                 viewer.appendChild(copyBtn);
@@ -387,84 +453,43 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function saveAllSessionsToStorage() {
-        if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
-            const cleanSessions = {};
-
-            for (const id in sessions) {
-                const s = sessions[id];
-                cleanSessions[id] = {
-                    messages: s.messages,
-                    activeTab: s.activeTab,
-                    savedMessages: s.savedMessages
-                };
-            }
-
-            chrome.storage.local.set({ websocketSessions: cleanSessions }, () => {
-                console.log('sessions saved to storage');
-            });
+    // Save all sessions to chrome.storage.local
+    function saveAllSessions() {
+        const data = Object.entries(sessions).map(([id, s]) => ({
+            id,
+            url: document.getElementById(`${id}-url`)?.value || s.url || "",
+            messages: s.messages,
+            activeTab: s.activeTab,
+            savedMessages: s.savedMessages
+        }));
+        if (window.chrome?.storage?.local) {
+            chrome.storage.local.set({ websocketKongSessions: data });
+        } else {
+            localStorage.setItem('websocketKongSessions', JSON.stringify(data));
         }
     }
 
-    function loadSessionsFromStorage() {
-        if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
-            chrome.storage.local.get(['websocketSessions'], (result) => {
-                const stored = result.websocketSessions || {};
-                Object.entries(stored).forEach(([id, sessionData]) => {
-                    if (!sessionData || typeof sessionData !== 'object') {
-                        console.warn(`Invalid session data for ${id}`, sessionData);
-                        return;
-                    }
-                    restoreSessionUI(id, sessionData);
+    // Restore all sessions from chrome.storage.local
+    async function restoreSessions() {
+        return new Promise((resolve) => {
+            if (window.chrome?.storage?.local) {
+                chrome.storage.local.get(['websocketKongSessions'], (result) => {
+                    const arr = result.websocketKongSessions || [];
+                    arr.forEach(sessionData => {
+                        addSession(sessionData);
+                    });
+                    sessionCounter = arr.length;
+                    resolve();
                 });
-            });
-        }
+            } else {
+                // fallback for non-extension environments
+                const arr = JSON.parse(localStorage.getItem('websocketKongSessions') || '[]');
+                arr.forEach(sessionData => {
+                    addSession(sessionData);
+                });
+                sessionCounter = arr.length;
+                resolve();
+            }
+        });
     }
-
-    function restoreSessionUI(id, sessionData) {
-        const session = {
-            socket: null,
-            messages: sessionData.messages || [""],
-            activeTab: sessionData.activeTab || 0,
-            savedMessages: sessionData.savedMessages || []
-        };
-        sessions[id] = session;
-
-        const button = document.createElement('button');
-        button.textContent = id;
-        button.addEventListener('click', () => selectSession(id));
-        tabButtons.appendChild(button);
-
-        const div = document.createElement('div');
-        div.className = 'session';
-        div.id = id;
-        div.style.display = 'none';
-        div.innerHTML = getSessionInnerHTML(id);
-        sessionsContainer.appendChild(div);
-
-        document.getElementById(`${id}-connect`).addEventListener('click', () => connect(id));
-        document.getElementById(`${id}-send`).addEventListener('click', () => send(id));
-        document.getElementById(`${id}-save-message`).addEventListener('click', () => saveCurrentMessage(id));
-
-        setupJSONHighlight(id);
-
-        const tabList = document.getElementById(`${id}-tabs`);
-        for (let i = 1; i < session.messages.length; i++) {
-            const newTab = document.createElement('button');
-            newTab.className = 'message-tab';
-            newTab.dataset.tab = i;
-            newTab.textContent = `#${i + 1}`;
-            newTab.onclick = () => switchMessageTab(id, i);
-            tabList.insertBefore(newTab, document.getElementById(`${id}-add-tab`));
-        }
-
-        setupTabEvents(id);
-
-        switchMessageTab(id, session.activeTab);
-
-        renderSavedMessages(id);
-
-        selectSession(id);
-    }
-
 });
