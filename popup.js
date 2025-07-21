@@ -105,6 +105,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         }
 
+        setupSavedMessagesExportImport(id);
+
         return id;
     }
 
@@ -153,6 +155,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 <div class="session-body">
     <div class="saved-panel">
       <h3>Saved Messages</h3>
+      <div style="display:flex;gap:4px;margin-bottom:4px;">
+        <button id="${id}-export-saved" class="saved-export-btn">Export</button>
+        <button id="${id}-import-saved" class="saved-import-btn">Import</button>
+        <input type="file" id="${id}-import-file" accept=".json" style="display:none"/>
+      </div>
       <div id="${id}-saved-list" class="saved-message-list"></div>
     </div>
     <div class="editor-panel">
@@ -177,6 +184,54 @@ document.addEventListener('DOMContentLoaded', async () => {
     </div>
 </div>
 `;
+    }
+
+    function setupSavedMessagesExportImport(id) {
+        // Export
+        const exportBtn = document.getElementById(`${id}-export-saved`);
+        exportBtn.addEventListener('click', () => {
+            const data = sessions[id].savedMessages || [];
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${id}-saved-messages.json`;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 100);
+        });
+
+        // Import
+        const importBtn = document.getElementById(`${id}-import-saved`);
+        const fileInput = document.getElementById(`${id}-import-file`);
+        importBtn.addEventListener('click', () => {
+            fileInput.value = '';
+            fileInput.click();
+        });
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                try {
+                    const arr = JSON.parse(evt.target.result);
+                    if (Array.isArray(arr)) {
+                        sessions[id].savedMessages = arr;
+                        renderSavedMessages(id);
+                        saveAllSessions();
+                        alert('Saved Messages imported!');
+                    } else {
+                        alert('Invalid file format.');
+                    }
+                } catch (err) {
+                    alert('Failed to import: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+        });
     }
 
     function renderMessageTabs(id) {
