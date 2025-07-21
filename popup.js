@@ -14,15 +14,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     const sessionsContainer = document.getElementById('sessions');
     const addSessionBtn = document.getElementById('add-session');
 
-    // 새로고침 시 현재 메시지 저장
     window.addEventListener('beforeunload', () => {
-        Object.keys(sessions).forEach(id => {
+        const activeSessionTab = document.querySelector('.session-tab.active');
+        if (activeSessionTab) {
+            const id = activeSessionTab.dataset.id;
             const textarea = document.getElementById(`${id}-message`);
-            if (textarea) {
-                const session = sessions[id];
-                session.messages[session.activeTab] = textarea.value;
+            if (textarea && sessions[id]) {
+                sessions[id].messages[sessions[id].activeTab] = textarea.value;
             }
-        });
+        }
         saveAllSessions();
     });
 
@@ -96,7 +96,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         setupJSONHighlight(id);
 
         renderSessionTabs(id);
-        restoreMessageTabsAndTextarea(id);
+
+        const textarea = document.getElementById(`${id}-message`);
+        if (textarea) {
+            textarea.addEventListener('input', () => {
+                sessions[id].messages[sessions[id].activeTab] = textarea.value;
+                saveAllSessions();
+            });
+        }
 
         return id;
     }
@@ -115,6 +122,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function selectSession(id) {
+        const prevActive = document.querySelector('.session-tab.active');
+        if (prevActive) {
+            const prevId = prevActive.dataset.id;
+            const prevTextarea = document.getElementById(`${prevId}-message`);
+            if (prevTextarea && sessions[prevId]) {
+                sessions[prevId].messages[sessions[prevId].activeTab] = prevTextarea.value;
+            }
+        }
+
         renderSessionTabs(id);
         document.querySelectorAll('.session').forEach(el => (el.style.display = 'none'));
         const selected = document.getElementById(id);
@@ -125,16 +141,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById(`${id}-url`).value = sessions[id].url;
         renderMessageTabs(id);
 
-        // textarea 값 먼저 할당
         const textarea = document.getElementById(`${id}-message`);
         if (textarea) {
             textarea.value = sessions[id].messages[sessions[id].activeTab] || "";
+            textarea.dispatchEvent(new Event('input'));
         }
-
-        // 그 다음 switchMessageTab 호출 (textarea 값 덮어쓰지 않도록 주의)
-        switchMessageTab(id, sessions[id].activeTab);
-
-        saveAllSessions();
     }
 
     function getSessionInnerHTML(id) {
@@ -226,23 +237,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         const textarea = document.getElementById(`${id}-message`);
         if (!textarea) return;
 
-        // 현재 탭 메시지 저장
         session.messages[session.activeTab] = textarea.value;
 
         session.activeTab = tabIndex;
 
-        // 새 탭 메시지 textarea에 할당
         textarea.value = session.messages[tabIndex] || "";
 
         renderMessageTabs(id);
 
-        // input 이벤트 강제 발생 (JSON 하이라이트 갱신용)
         textarea.dispatchEvent(new Event('input'));
-    }
-
-    function restoreMessageTabsAndTextarea(id) {
-        renderMessageTabs(id);
-        switchMessageTab(id, sessions[id].activeTab);
     }
 
     function connect(id) {
@@ -419,7 +422,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         input.addEventListener('input', () => {
             const val = input.value;
-            sessions[id].messages[sessions[id].activeTab] = val; // 항상 저장!
+            sessions[id].messages[sessions[id].activeTab] = val;
             if (!val.trim()) {
                 viewer.innerHTML = '';
                 viewer.appendChild(copyBtn);
