@@ -15,6 +15,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const addSessionBtn = document.getElementById('add-session');
 
     window.addEventListener('beforeunload', () => {
+        const emptyAddSessionBtn = document.getElementById('empty-add-session');
+        if (emptyAddSessionBtn) {
+            emptyAddSessionBtn.addEventListener('click', () => {
+                const newId = addSession();
+                selectSession(newId);
+            });
+        }
+
         const activeSessionTab = document.querySelector('.session-tab.active');
         if (activeSessionTab) {
             const id = activeSessionTab.dataset.id;
@@ -27,6 +35,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     await restoreSessions();
+
+    updateEmptyTitle();
 
     addSessionBtn.addEventListener('click', () => {
         const newId = addSession();
@@ -61,6 +71,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             sessionTabs.appendChild(tab);
         });
+        updateEmptyTitle();
     }
 
     function addSession(sessionData) {
@@ -134,6 +145,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         setupSavedMessagesExportImport(id);
+        updateEmptyTitle();
 
         return id;
     }
@@ -149,6 +161,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             selectSession(ids[0]);
         }
         saveAllSessions();
+        updateEmptyTitle();
     }
 
     function selectSession(id) {
@@ -598,5 +611,27 @@ document.addEventListener('DOMContentLoaded', async () => {
                 resolve();
             }
         });
+    }
+
+    function updateEmptyTitle() {
+        const emptyTitle = document.getElementById('empty-title');
+        const topAddSessionBtn = document.getElementById('add-session');
+        if (!emptyTitle) return;
+        if (Object.keys(sessions).length === 0) {
+            emptyTitle.style.display = 'block';
+            if (topAddSessionBtn) topAddSessionBtn.style.display = 'none';
+            // New Session 버튼 이벤트 항상 연결
+            const emptyAddSessionBtn = document.getElementById('empty-add-session');
+            if (emptyAddSessionBtn && !emptyAddSessionBtn._wsKongBound) {
+                emptyAddSessionBtn.addEventListener('click', () => {
+                    const newId = addSession();
+                    selectSession(newId);
+                });
+                emptyAddSessionBtn._wsKongBound = true; // 중복 방지
+            }
+        } else {
+            emptyTitle.style.display = 'none';
+            if (topAddSessionBtn) topAddSessionBtn.style.display = '';
+        }
     }
 });
