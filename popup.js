@@ -93,15 +93,43 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
 
         setupMessageTabEvents(id);
-        setupJSONHighlight(id);
 
         renderSessionTabs(id);
 
         const textarea = document.getElementById(`${id}-message`);
         if (textarea) {
-            textarea.addEventListener('input', () => {
+            textarea.addEventListener('input', (e) => {
+                const val = textarea.value;
+                try {
+                    if (val.trim() !== "") {
+                        const parsed = JSON.parse(val);
+                        const formatted = JSON.stringify(parsed, null, 2);  if (val !== formatted) {
+                            textarea.value = formatted;
+                        }
+
+                        textarea.classList.remove('json-error');
+                    } else {
+                        textarea.classList.remove('json-error');
+                    }
+                } catch {
+                    textarea.classList.add('json-error');
+                }
+
                 sessions[id].messages[sessions[id].activeTab] = textarea.value;
                 saveAllSessions();
+            });
+        }
+
+        const copyBtn = document.getElementById(`${id}-copy-message`);
+        if (copyBtn && textarea) {
+            copyBtn.addEventListener('click', () => {
+                navigator.clipboard.writeText(textarea.value).then(() => {
+                    copyBtn.innerHTML = '✅';
+                    setTimeout(() => copyBtn.innerHTML = '📋', 1000);
+                }).catch(() => {
+                    copyBtn.innerHTML = '❌';
+                    setTimeout(() => copyBtn.innerHTML = '📋', 1000);
+                });
             });
         }
 
@@ -169,11 +197,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       </div>
       <div style="display: flex; align-items: center;">
         <div class="message-tabs" id="${id}-tabs"></div>
-        <button class="add-tab" id="${id}-add-tab" title="Add message tab" style="margin-left: 6px;">+</button>
+        <button class="add-tab add-message-btn" id="${id}-add-tab" title="Add message tab" style="margin-left: 12px;">+ Message</button>
       </div>
       <div class="editor-container">
-        <textarea id="${id}-message" class="message-input" placeholder="Enter JSON message"></textarea>
-        <pre id="${id}-json-viewer" class="json-viewer"></pre>
+        <div class="json-input-wrapper" style="position:relative;">
+          <textarea id="${id}-message" class="message-input" placeholder="Enter JSON message"></textarea>
+          <button id="${id}-copy-message" class="copy-btn" title="Copy">📋</button>
+        </div>
         <div class="button-group">
           <button id="${id}-send">Send</button>
           <button id="${id}-save-message">Save</button>
@@ -187,7 +217,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function setupSavedMessagesExportImport(id) {
-        // Export
         const exportBtn = document.getElementById(`${id}-export-saved`);
         exportBtn.addEventListener('click', () => {
             const data = sessions[id].savedMessages || [];
@@ -204,7 +233,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             }, 100);
         });
 
-        // Import
         const importBtn = document.getElementById(`${id}-import-saved`);
         const fileInput = document.getElementById(`${id}-import-file`);
         importBtn.addEventListener('click', () => {
