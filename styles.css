@@ -135,7 +135,7 @@ h1 {
 
 .session-tab .close-btn,
 .message-tab .close-btn {
-    margin-left: 10px;
+    margin-left: 25px;
     color: #aaa;
     background: none;
     border: none;
@@ -647,4 +647,8 @@ button:hover {
     background: #e8f5e9;
     color: #219150;
     border-color: #27ae60;
+}
+
+.message-tab.drag-over {
+    border-top: 3px solid var(--main-color);
 }

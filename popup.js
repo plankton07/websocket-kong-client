@@ -279,27 +279,74 @@ document.addEventListener('DOMContentLoaded', async () => {
         const session = sessions[id];
         const tabList = document.getElementById(`${id}-tabs`);
         tabList.innerHTML = '';
+
         session.messages.forEach((msg, idx) => {
             const tab = document.createElement('div');
             tab.className = 'message-tab' + (idx === session.activeTab ? ' active' : '');
             tab.textContent = `#${idx + 1}`;
+            tab.setAttribute('draggable', 'true');
+            tab.dataset.idx = idx;
 
             const closeBtn = document.createElement('button');
             closeBtn.className = 'close-btn';
             closeBtn.innerHTML = '&times;';
             closeBtn.title = 'Close this message tab';
-
-            closeBtn.addEventListener('click', (e) => {
+            closeBtn.addEventListener('click', e => {
                 e.stopPropagation();
                 removeMessageTab(id, idx);
             });
+            tab.appendChild(closeBtn);
+
+            // tooltip
+            const trimmed = msg.trim();
+            tab.title = trimmed.length > 60 ? trimmed.slice(0, 60) + '…' : trimmed;
 
             tab.appendChild(closeBtn);
 
+            tabList.appendChild(tab);
+
+            // tab click event
             tab.addEventListener('click', () => {
                 if (!tab.classList.contains('active')) {
                     switchMessageTab(id, idx);
                 }
+            });
+
+            tab.addEventListener('dragstart', e => {
+                e.dataTransfer.setData('text/plain', idx.toString());
+                e.dataTransfer.effectAllowed = 'move';
+            });
+            tab.addEventListener('dragover', e => {
+                e.preventDefault();
+                tab.classList.add('drag-over');
+            });
+            tab.addEventListener('dragleave', () => {
+                tab.classList.remove('drag-over');
+            });
+            tab.addEventListener('drop', e => {
+                e.preventDefault();
+                tab.classList.remove('drag-over');
+
+                const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+                const toIdx = idx;
+                if (fromIdx === toIdx) return;
+
+                // 1) messages 배열 순서 교체
+                const msgs = session.messages;
+                const [moved] = msgs.splice(fromIdx, 1);
+                msgs.splice(toIdx, 0, moved);
+
+                if (session.activeTab === fromIdx) {
+                    session.activeTab = toIdx;
+                } else if (fromIdx < session.activeTab && toIdx >= session.activeTab) {
+                    session.activeTab--;
+                } else if (fromIdx > session.activeTab && toIdx <= session.activeTab) {
+                    session.activeTab++;
+                }
+
+                saveAllSessions();
+                renderMessageTabs(id);
+                switchMessageTab(id, session.activeTab);
             });
 
             tabList.appendChild(tab);
